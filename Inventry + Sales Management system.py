@@ -1,266 +1,280 @@
+"""
+Inventory + Sales Management System
+Rungta International Skills University - B.Tech CSE (PS No. 42)
 
-import csv
+Concepts used: CRUD, Dictionaries, Pandas, File Handling
+Files used   : inventory.csv (ID, Name, Stock, Price)
+               sales.csv     (ID, Quantity, Amount)
+"""
+
 import os
+import pandas as pd
 
 INVENTORY_FILE = "inventory.csv"
 SALES_FILE = "sales.csv"
 
-
-# Create CSV files
-def create_files():
-    if not os.path.exists(INVENTORY_FILE):
-        with open(INVENTORY_FILE, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["ID", "Name", "Stock", "Price"])
-
-    if not os.path.exists(SALES_FILE):
-        with open(SALES_FILE, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["ID", "Quantity", "Amount"])
+INVENTORY_COLS = ["ID", "Name", "Stock", "Price"]
+SALES_COLS = ["ID", "Quantity", "Amount"]
 
 
-# Load inventory
+# ---------------------------------------------------------------
+# File handling helpers
+# ---------------------------------------------------------------
 def load_inventory():
-    with open(INVENTORY_FILE, "r") as f:
-        return list(csv.DictReader(f))
+    """Read inventory.csv. If the file is not there, make an empty one."""
+    if not os.path.exists(INVENTORY_FILE):
+        df = pd.DataFrame(columns=INVENTORY_COLS)
+        df.to_csv(INVENTORY_FILE, index=False)
+    df = pd.read_csv(INVENTORY_FILE)
+    df["Stock"] = df["Stock"].astype(int)
+    df["Price"] = df["Price"].astype(float)
+    return df
 
 
-# Save inventory
-def save_inventory(items):
-    with open(INVENTORY_FILE, "w", newline="") as f:
-        writer = csv.DictWriter(
-            f, fieldnames=["ID", "Name", "Stock", "Price"]
-        )
-        writer.writeheader()
-        writer.writerows(items)
+def save_inventory(df):
+    df.to_csv(INVENTORY_FILE, index=False)
 
 
-# 1. Add item
-def add_item():
-    items = load_inventory()
+def load_sales():
+    """Read sales.csv. If the file is not there, make an empty one."""
+    if not os.path.exists(SALES_FILE):
+        df = pd.DataFrame(columns=SALES_COLS)
+        df.to_csv(SALES_FILE, index=False)
+    df = pd.read_csv(SALES_FILE)
+    df["Quantity"] = df["Quantity"].astype(int)
+    df["Amount"] = df["Amount"].astype(float)
+    return df
 
-    item_id = input("Enter Item ID: ").strip()
-    if any(x["ID"] == item_id for x in items):
-        print("Item ID already exists.")
+
+def save_sales(df):
+    df.to_csv(SALES_FILE, index=False)
+
+
+def fmt(number):
+    """Show 10.0 as 10 and 10.5 as 10.5 (looks cleaner on screen)."""
+    number = float(number)
+    if number == int(number):
+        return str(int(number))
+    return str(round(number, 2))
+
+
+def generate_id(df):
+    """First item is I101, then I102, I103 ..."""
+    if df.empty:
+        return "I101"
+    last_number = max(int(i[1:]) for i in df["ID"])
+    return "I" + str(last_number + 1)
+
+
+def find_row(df, item_id):
+    """Return the index of the item in the dataframe, or None."""
+    matches = df.index[df["ID"] == item_id].tolist()
+    if matches:
+        return matches[0]
+    return None
+
+
+# ---------------------------------------------------------------
+# CRUD functions (one function for each)
+# ---------------------------------------------------------------
+def add_item(name, stock, price):
+    """CREATE - add a new item to inventory."""
+    if name.strip() == "":
+        print("Name cannot be empty.")
+        return
+    if stock < 0 or price < 0:
+        print("Stock and price cannot be negative.")
         return
 
-    name = input("Enter Item Name: ").strip()
+    df = load_inventory()
+    new_id = generate_id(df)
 
-    try:
-        stock = int(input("Enter Stock: "))
-        price = float(input("Enter Price: "))
+    # dictionary for the new record
+    record = {"ID": new_id, "Name": name.strip(), "Stock": stock, "Price": price}
+    df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
+    save_inventory(df)
 
-        if not item_id or not name or stock < 0 or price < 0:
-            print("Invalid input.")
-            return
-
-    except ValueError:
-        print("Please enter valid numbers.")
-        return
-
-    items.append({
-        "ID": item_id,
-        "Name": name,
-        "Stock": str(stock),
-        "Price": str(price)
-    })
-
-    save_inventory(items)
     print("Item added.")
+    print(f"ID: {new_id} | {record['Name']} | Stock: {stock} | Price: {fmt(price)}")
 
 
-# 2. Sell item
-def sell_item():
-    items = load_inventory()
-
-    item_id = input("Enter Item ID: ").strip()
-
-    item = next(
-        (x for x in items if x["ID"] == item_id), None
-    )
-
-    if item is None:
+def update_item(item_id, new_stock=None, new_price=None):
+    """UPDATE - change stock and/or price of an item."""
+    df = load_inventory()
+    row = find_row(df, item_id)
+    if row is None:
         print(f"Item ID {item_id} not found.")
         return
 
-    try:
-        quantity = int(input("Enter Quantity: "))
-
-        if quantity <= 0:
-            print("Invalid quantity.")
+    if new_stock is not None:
+        if new_stock < 0:
+            print("Stock cannot be negative.")
             return
+        df.loc[row, "Stock"] = new_stock
+    if new_price is not None:
+        if new_price < 0:
+            print("Price cannot be negative.")
+            return
+        df.loc[row, "Price"] = new_price
 
-    except ValueError:
-        print("Enter a valid quantity.")
+    save_inventory(df)
+    print("Item updated.")
+    print(f"ID: {item_id} | {df.loc[row, 'Name']} | "
+          f"Stock: {df.loc[row, 'Stock']} | Price: {fmt(df.loc[row, 'Price'])}")
+
+
+def delete_item(item_id):
+    """DELETE - remove an item from inventory."""
+    df = load_inventory()
+    row = find_row(df, item_id)
+    if row is None:
+        print(f"Item ID {item_id} not found.")
         return
 
-    available = int(item["Stock"])
+    name = df.loc[row, "Name"]
+    df = df.drop(row).reset_index(drop=True)
+    save_inventory(df)
+    print(f"Item deleted: {item_id} ({name})")
 
+
+def sell_item(item_id, quantity):
+    """SELL - reduce stock and record the sale in sales.csv."""
+    df = load_inventory()
+    row = find_row(df, item_id)
+    if row is None:
+        print(f"Item ID {item_id} not found.")
+        return
+    if quantity <= 0:
+        print("Quantity must be at least 1.")
+        return
+
+    available = int(df.loc[row, "Stock"])
     if quantity > available:
         print(f"Not enough stock. Available: {available}")
         return
 
-    amount = quantity * float(item["Price"])
+    name = df.loc[row, "Name"]
+    amount = quantity * df.loc[row, "Price"]
 
-    item["Stock"] = str(available - quantity)
-    save_inventory(items)
+    # reduce the stock
+    df.loc[row, "Stock"] = available - quantity
+    save_inventory(df)
 
-    with open(SALES_FILE, "a", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([item_id, quantity, amount])
+    # write the sale to sales.csv
+    sales = load_sales()
+    sale = {"ID": item_id, "Quantity": quantity, "Amount": amount}
+    sales = pd.concat([sales, pd.DataFrame([sale])], ignore_index=True)
+    save_sales(sales)
 
-    print("Sale recorded.")
-    print("Revenue:", amount)
-
-
-# 3. Update item
-def update_item():
-    items = load_inventory()
-    item_id = input("Enter Item ID: ").strip()
-
-    for item in items:
-        if item["ID"] == item_id:
-            try:
-                name = input("Enter New Name (Enter to skip): ")
-                stock = input("Enter New Stock (Enter to skip): ")
-                price = input("Enter New Price (Enter to skip): ")
-
-                if name:
-                    item["Name"] = name
-
-                if stock:
-                    if int(stock) < 0:
-                        print("Stock cannot be negative.")
-                        return
-                    item["Stock"] = str(int(stock))
-
-                if price:
-                    if float(price) < 0:
-                        print("Price cannot be negative.")
-                        return
-                    item["Price"] = str(float(price))
-
-                save_inventory(items)
-                print("Item updated.")
-                return
-
-            except ValueError:
-                print("Invalid input.")
-                return
-
-    print(f"Item ID {item_id} not found.")
+    left = available - quantity
+    print(f"Sale recorded: {name} x{quantity} = {fmt(amount)}")
+    if left == 0:
+        print("Stock left: 0 | Item is now out of stock.")
+    else:
+        print(f"Stock left: {left}")
 
 
-# 4. Delete item
-def delete_item():
-    items = load_inventory()
-    item_id = input("Enter Item ID: ").strip()
-
-    updated_items = [
-        item for item in items if item["ID"] != item_id
-    ]
-
-    if len(items) == len(updated_items):
-        print(f"Item ID {item_id} not found.")
+# ---------------------------------------------------------------
+# Sales report (uses groupby)
+# ---------------------------------------------------------------
+def sales_report():
+    sales = load_sales()
+    if sales.empty:
+        print("No sales recorded yet.")
         return
 
-    save_inventory(updated_items)
-    print("Item deleted.")
+    inventory = load_inventory()
+    # dictionary of ID -> Name, so we can show names in the report
+    names = dict(zip(inventory["ID"], inventory["Name"]))
+
+    report = sales.groupby("ID").agg(Units=("Quantity", "sum"),
+                                     Revenue=("Amount", "sum")).reset_index()
+    report["Name"] = report["ID"].map(names).fillna(report["ID"])  # deleted item -> show ID
+    report = report.sort_values(by="Units", ascending=False)
+
+    for _, r in report.iterrows():
+        print(f"{r['Name']}: {r['Units']} units | Revenue: {fmt(r['Revenue'])}")
+
+    print(f"Total revenue: {fmt(report['Revenue'].sum())}")
+    best = report.iloc[0]
+    print(f"Best seller: {best['Name']} ({best['Units']} units)")
 
 
-# 5. Sales report
-def sales_report():
-    items = load_inventory()
-
-    with open(SALES_FILE, "r") as f:
-        sales = list(csv.DictReader(f))
-
-    quantities = {}
-    revenues = {}
-    total_revenue = 0
-
-    names = {item["ID"]: item["Name"] for item in items}
-
-    for sale in sales:
-        item_id = sale["ID"]
-        quantity = int(sale["Quantity"])
-        amount = float(sale["Amount"])
-
-        quantities[item_id] = quantities.get(item_id, 0) + quantity
-        revenues[item_id] = revenues.get(item_id, 0) + amount
-        total_revenue += amount
-
-    print("\n--------- SALES REPORT ---------")
-
-    for item_id in quantities:
-        print("Item:", names.get(item_id, item_id))
-        print("Units Sold:", quantities[item_id])
-        print("Revenue:", revenues[item_id])
-        print("-------------------------------")
-
-    print("Total Revenue:", total_revenue)
-
-    if quantities:
-        best = max(quantities, key=quantities.get)
-        print("Best Seller:", names.get(best, best))
-        print("Units Sold:", quantities[best])
+# ---------------------------------------------------------------
+# Input helpers (so the program does not crash on wrong input)
+# ---------------------------------------------------------------
+def ask_int(message):
+    try:
+        return int(input(message))
+    except ValueError:
+        print("Please enter a whole number.")
+        return None
 
 
-# 6. Display inventory
-def show_inventory():
-    items = load_inventory()
-
-    print("\n--------- INVENTORY ---------")
-
-    for item in items:
-        print(
-            item["ID"],
-            item["Name"],
-            "Stock:", item["Stock"],
-            "Price:", item["Price"]
-        )
+def ask_float(message):
+    try:
+        return float(input(message))
+    except ValueError:
+        print("Please enter a valid number.")
+        return None
 
 
-# Main menu
+# ---------------------------------------------------------------
+# Menu
+# ---------------------------------------------------------------
+def show_menu():
+    print("\n===== Inventory + Sales Management =====")
+    print("1. Add item")
+    print("2. Sell")
+    print("3. Update")
+    print("4. Delete")
+    print("5. Sales report")
+    print("6. Exit")
+
+
 def main():
-    create_files()
-
     while True:
-        print("\n===== INVENTORY MANAGEMENT SYSTEM =====")
-        print("1. Add Item")
-        print("2. Sell Item")
-        print("3. Update Item")
-        print("4. Delete Item")
-        print("5. Sales Report")
-        print("6. Show Inventory")
-        print("0. Exit")
-
-        choice = input("Enter your choice: ")
+        show_menu()
+        choice = input("Enter option: ").strip()
 
         if choice == "1":
-            add_item()
+            name = input("Name: ")
+            stock = ask_int("Stock: ")
+            price = ask_float("Price: ")
+            if stock is not None and price is not None:
+                add_item(name, stock, price)
 
         elif choice == "2":
-            sell_item()
+            item_id = input("ID: ").strip().upper()
+            qty = ask_int("Quantity: ")
+            if qty is not None:
+                sell_item(item_id, qty)
 
         elif choice == "3":
-            update_item()
+            item_id = input("ID: ").strip().upper()
+            stock_text = input("New stock (press Enter to skip): ").strip()
+            price_text = input("New price (press Enter to skip): ").strip()
+            try:
+                new_stock = int(stock_text) if stock_text else None
+                new_price = float(price_text) if price_text else None
+            except ValueError:
+                print("Please enter valid numbers.")
+                continue
+            update_item(item_id, new_stock, new_price)
 
         elif choice == "4":
-            delete_item()
+            item_id = input("ID: ").strip().upper()
+            delete_item(item_id)
 
         elif choice == "5":
             sales_report()
 
         elif choice == "6":
-            show_inventory()
-
-        elif choice == "0":
-            print("Thank you!")
+            print("Goodbye!")
             break
 
         else:
-            print("Invalid choice. Try again.")
+            print("Invalid option. Choose 1 to 6.")
 
 
 if __name__ == "__main__":
